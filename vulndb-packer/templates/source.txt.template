@@ -1,0 +1,5 @@
+# 漏洞库版本号
+version: {version}
+
+# 漏洞库版本发布日期
+date: {date}
