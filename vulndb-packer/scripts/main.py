@@ -6,6 +6,7 @@ VulnDB Packer 主入口脚本
 import argparse
 import os
 import sys
+import tempfile
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 
@@ -15,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from logger import Logger
 from sql_parser import MySQLParser, MySQLError
 from sql_converter import SQLConverter, SQLConverterError
+from mysql_to_dm8 import convert as mysql_to_dm8_convert
 from excel_reader import ExcelReader, ExcelReadError
 from excel_extractor import VulnChangeExtractor, VulnChangeExtractorError
 from package_builder import PackageBuilder, PackageBuilderError
@@ -98,15 +100,14 @@ class VulnDBPacker:
             )
             self.logger.log_step(4, "生成变化说明", "完成")
             
-            # 步骤5: 解析MySQL SQL
-            self.logger.log_step(5, "解析MySQL SQL")
+            # 步骤5: 读取MySQL SQL
+            self.logger.log_step(5, "读取MySQL SQL")
             mysql_sql_content = self._read_file(mysql_sql_path)
-            mysql_data = self.sql_parser.parse(mysql_sql_content)
-            self.logger.log_step(5, "解析MySQL SQL", "完成")
+            self.logger.log_step(5, "读取MySQL SQL", "完成")
             
             # 步骤6: 转换为达梦8 SQL
             self.logger.log_step(6, "转换为达梦8 SQL")
-            dm_sql_content = self.sql_converter.convert_to_dm(mysql_data)
+            dm_sql_content = self._convert_to_dm8(mysql_sql_path)
             self.logger.log_step(6, "转换为达梦8 SQL", "完成")
             
             # 步骤7: 生成升级包
@@ -270,6 +271,36 @@ class VulnDBPacker:
                 raise MySQLError(f"读取SQL文件失败: {str(e)}")
         except Exception as e:
             raise MySQLError(f"读取SQL文件失败: {str(e)}")
+    
+    def _convert_to_dm8(self, mysql_sql_path: str) -> str:
+        """
+        使用 mysql_to_dm8.py 将MySQL SQL转换为达梦8 SQL
+        
+        Args:
+            mysql_sql_path: MySQL SQL文件路径
+            
+        Returns:
+            达梦8 SQL内容
+        """
+        try:
+            # 创建临时文件用于存储转换结果
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sql', delete=False, encoding='utf-8') as tmp:
+                tmp_path = tmp.name
+            
+            # 调用 mysql_to_dm8 的 convert 函数
+            mysql_to_dm8_convert(mysql_sql_path, tmp_path)
+            
+            # 读取转换结果
+            with open(tmp_path, 'r', encoding='utf-8') as f:
+                dm_sql_content = f.read()
+            
+            # 删除临时文件
+            os.unlink(tmp_path)
+            
+            return dm_sql_content
+            
+        except Exception as e:
+            raise SQLConverterError(f"转换为达梦8 SQL失败: {str(e)}")
     
     def _build_package(self, mysql_sql_content: str, dm_sql_content: str,
                       current_version: str, new_version: str, report: str = "") -> str:
