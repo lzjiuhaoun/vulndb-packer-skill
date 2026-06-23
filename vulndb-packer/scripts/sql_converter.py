@@ -146,10 +146,8 @@ exit;"""
         
         # 字符串值
         if isinstance(value, str):
-            # 转义单引号
+            # 转义单引号：' → ''（达梦8和MySQL都使用这种方式）
             escaped_value = value.replace("'", "''")
-            # 处理反斜杠
-            escaped_value = escaped_value.replace("\\", "\\\\")
             return f"'{escaped_value}'"
         
         # 数值

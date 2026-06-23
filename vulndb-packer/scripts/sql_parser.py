@@ -77,21 +77,63 @@ class MySQLParser:
     
     def _extract_insert_statements(self, sql_content: str) -> List[Dict[str, Any]]:
         """提取所有INSERT语句"""
-        # 匹配INSERT INTO语句
-        # 格式1: INSERT INTO `va_library` VALUES (...);
-        # 格式2: INSERT INTO `va_library`(`col1`, `col2`, ...) VALUES (...);
-        pattern = r"INSERT\s+INTO\s+`va_library`(?:\s*\([^)]*\))?\s+VALUES\s*\(([^)]+(?:\([^)]*\)[^)]*)*)\)\s*;"
-        
-        matches = re.findall(pattern, sql_content, re.IGNORECASE | re.DOTALL)
-        
+        # 使用状态机方式提取INSERT语句，支持嵌套括号
         insert_statements = []
-        for match in matches:
-            try:
-                values = self._parse_values(match)
-                insert_statements.append({"values": values})
-            except Exception as e:
-                # 跳过无法解析的INSERT语句
-                continue
+        
+        # 查找所有INSERT INTO语句的起始位置
+        pattern = r"INSERT\s+INTO\s+`va_library`(?:\s*\([^)]*\))?\s+VALUES\s*\("
+        for match in re.finditer(pattern, sql_content, re.IGNORECASE):
+            start_pos = match.end()
+            
+            # 使用状态机找到匹配的右括号
+            paren_depth = 1
+            i = start_pos
+            in_string = False
+            string_char = None
+            escape_next = False
+            
+            while i < len(sql_content) and paren_depth > 0:
+                char = sql_content[i]
+                
+                if escape_next:
+                    escape_next = False
+                    i += 1
+                    continue
+                
+                if char == '\\':
+                    escape_next = True
+                    i += 1
+                    continue
+                
+                if in_string:
+                    if char == string_char:
+                        in_string = False
+                    i += 1
+                    continue
+                
+                if char in ("'", '"'):
+                    in_string = True
+                    string_char = char
+                    i += 1
+                    continue
+                
+                if char == '(':
+                    paren_depth += 1
+                elif char == ')':
+                    paren_depth -= 1
+                
+                i += 1
+            
+            if paren_depth == 0:
+                # 提取VALUES子句内容（不包括外层括号）
+                values_str = sql_content[start_pos:i-1]
+                try:
+                    values = self._parse_values(values_str)
+                    if values:
+                        insert_statements.append({"values": values})
+                except Exception as e:
+                    # 跳过无法解析的INSERT语句
+                    continue
         
         return insert_statements
     
@@ -171,10 +213,14 @@ class MySQLParser:
         # 字符串值
         if (value_str.startswith("'") and value_str.endswith("'")) or \
            (value_str.startswith('"') and value_str.endswith('"')):
-            # 移除引号并处理转义字符
+            # 移除引号
             inner_value = value_str[1:-1]
+            # 处理MySQL转义字符
+            # MySQL中 \' 表示单引号，需要转换为 '
+            # MySQL中 \\ 表示反斜杠，需要转换为 \
+            # 但是，如果原始值是 \\''（两个反斜杠+两个单引号），表示 \'（反斜杠+单引号）
+            # 所以需要先处理 \\'，再处理 '
             inner_value = inner_value.replace("\\'", "'")
-            inner_value = inner_value.replace('\\"', '"')
             inner_value = inner_value.replace("\\\\", "\\")
             return inner_value
         
