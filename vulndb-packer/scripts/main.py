@@ -234,8 +234,11 @@ class VulnDBPacker:
             # 初始化Excel读取器
             self.excel_reader = ExcelReader()
             
+            # 将相对路径转换为绝对路径（COM接口需要绝对路径）
+            absolute_excel_files = [os.path.abspath(f) for f in excel_files]
+            
             # 批量读取Excel文件
-            result = self.excel_reader.read_multiple_excels(excel_files)
+            result = self.excel_reader.read_multiple_excels(absolute_excel_files)
             
             # 检查是否有失败的文件
             if result["failed"]:
